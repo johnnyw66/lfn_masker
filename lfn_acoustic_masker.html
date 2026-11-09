@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LFN Acoustic Masker - Deep Brown Noise Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #0c0d0f;
+      color: #e2e8f0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .font-mono-code {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Custom range slider styling */
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      background: transparent;
+    }
+
+    input[type=range]:focus {
+      outline: none;
+    }
+
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 6px;
+      cursor: pointer;
+      background: #1e2430;
+      border-radius: 9999px;
+      border: 1px solid #2e3848;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      height: 18px;
+      width: 18px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      -webkit-appearance: none;
+      margin-top: -6px;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+      transition: transform 0.1s ease, background-color 0.1s ease;
+    }
+
+    input[type=range]::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+      background: #7dd3fc;
+    }
+
+    input[type=range]::-moz-range-track {
+      width: 100%;
+      height: 6px;
+      cursor: pointer;
+      background: #1e2430;
+      border-radius: 9999px;
+      border: 1px solid #2e3848;
+    }
+
+    input[type=range]::-moz-range-thumb {
+      height: 18px;
+      width: 18px;
+      border-radius: 50%;
+      background: #38bdf8;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+    }
+
+    /* Subtle glow accents */
+    .glow-cyan {
+      box-shadow: 0 0 25px -5px rgba(56, 189, 248, 0.25);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-4 md:p-8">
+
+  <!-- Header -->
+  <header class="max-w-4xl w-full mx-auto flex items-center justify-between pb-6 border-b border-slate-800">
+    <div class="flex items-center space-x-3">
+      <div class="w-3.5 h-3.5 rounded-full bg-cyan-400 animate-pulse shadow-md shadow-cyan-500/50"></div>
+      <div>
+        <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+          LFN Masker <span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-cyan-400 font-mono-code font-semibold border border-slate-700">SUB-BROWN</span>
+        </h1>
+        <p class="text-xs text-slate-400 mt-0.5">Low-Frequency Noise & Pump Hum Neutralizer</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="audio-state-badge" class="px-2.5 py-1 text-xs font-mono-code rounded-full bg-slate-900 text-slate-500 border border-slate-800">
+        STANDBY
+      </span>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="max-w-4xl w-full mx-auto my-6 flex-1 flex flex-col gap-6">
+
+    <!-- Visualizer Window -->
+    <div class="bg-slate-900/90 border border-slate-800/80 rounded-2xl p-4 md:p-5 glow-cyan relative overflow-hidden backdrop-blur">
+      <div class="flex justify-between items-center mb-3">
+        <div class="flex items-center space-x-2">
+          <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-300">Target Low-End Spectrum (20 Hz &ndash; 1 kHz)</span>
+        </div>
+        <div class="flex items-center gap-3 text-xs font-mono-code text-slate-400">
+          <span class="hidden sm:inline">Pump Band: <span class="text-amber-400">40-120 Hz</span></span>
+          <span id="peak-indicator">LFN Weight: <strong class="text-cyan-400">ACTIVE</strong></span>
+        </div>
+      </div>
+
+      <div class="w-full h-40 md:h-48 bg-slate-950/80 rounded-xl overflow-hidden relative border border-slate-800">
+        <canvas id="visualizer-canvas" class="w-full h-full block"></canvas>
+        <!-- Frequency Markers -->
+        <div class="absolute bottom-1 inset-x-0 flex justify-between px-3 text-[10px] font-mono-code text-slate-500 pointer-events-none select-none">
+          <span>20 Hz</span>
+          <span>50 Hz</span>
+          <span>100 Hz</span>
+          <span>250 Hz</span>
+          <span>500 Hz</span>
+          <span>1 kHz</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Primary Control Panel -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+      <!-- Master Output & Action Button -->
+      <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 flex flex-col justify-between">
+        <div>
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-4">Master Output</h2>
+          <button id="toggle-play-btn" class="w-full py-4 rounded-xl font-bold tracking-wide transition-all duration-200 flex items-center justify-center gap-2 text-white bg-cyan-600 hover:bg-cyan-500 active:scale-[0.98] shadow-lg shadow-cyan-600/30">
+            <svg id="play-icon" class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+            <span id="play-label">START MASKING</span>
+          </button>
+        </div>
+
+        <div class="mt-6">
+          <div class="flex justify-between items-center text-xs font-mono-code mb-2 text-slate-300">
+            <span>VOLUME</span>
+            <span id="volume-val" class="text-cyan-400 font-bold">75%</span>
+          </div>
+          <input type="range" id="volume-slider" min="0" max="100" value="75" step="1">
+          <p class="text-[11px] text-slate-500 mt-2 leading-relaxed">
+            Use headphones or a dedicated subwoofer/bass speaker for optimal low-frequency masking.
+          </p>
+        </div>
+      </div>
+
+      <!-- Tone Shaping (LFN Focus) -->
+      <div class="md:col-span-2 bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 flex flex-col justify-between">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-4 flex justify-between items-center">
+          <span>Acoustic Profile Shaping</span>
+          <button id="preset-reset-btn" class="text-[10px] text-cyan-400 hover:text-cyan-300 font-mono-code uppercase transition-colors">
+            Reset to Optimal LFN
+          </button>
+        </h2>
+
+        <div class="space-y-5">
+          <!-- Sub-Bass Boost / Low Shelf -->
+          <div>
+            <div class="flex justify-between items-center text-xs font-mono-code mb-1 text-slate-300">
+              <span class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                SUB-BASS BOOST (<span id="shelf-freq-label">80 Hz</span>)
+              </span>
+              <span id="shelf-gain-val" class="text-amber-400 font-bold">+8.0 dB</span>
+            </div>
+            <input type="range" id="shelf-gain-slider" min="-12" max="18" value="8" step="0.5">
+            <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono-code">
+              <span>-12 dB (Attenuate)</span>
+              <span>0 dB (Flat)</span>
+              <span>+18 dB (Max Masking)</span>
+            </div>
+          </div>
+
+          <!-- Cutoff Frequency (Low-Pass Filter) -->
+          <div>
+            <div class="flex justify-between items-center text-xs font-mono-code mb-1 text-slate-300">
+              <span class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+                CUTOFF FILTER (Steep 24dB/oct)
+              </span>
+              <span id="cutoff-val" class="text-cyan-400 font-bold">220 Hz</span>
+            </div>
+            <input type="range" id="cutoff-slider" min="60" max="800" value="220" step="5">
+            <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono-code">
+              <span>60 Hz (Pure Sub)</span>
+              <span>220 Hz (Balanced)</span>
+              <span>800 Hz (Airy Brown)</span>
+            </div>
+          </div>
+
+          <!-- Quick Presets -->
+          <div class="pt-2 border-t border-slate-800 flex flex-wrap gap-2 items-center">
+            <span class="text-[11px] text-slate-400 mr-1">Target Presets:</span>
+            <button class="preset-btn px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono-code transition" data-cutoff="160" data-gain="10" data-freq="65">
+              Heat Pump / Boiler
+            </button>
+            <button class="preset-btn px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono-code transition" data-cutoff="220" data-gain="6" data-freq="80">
+              Vibration / Rumble
+            </button>
+            <button class="preset-btn px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-mono-code transition" data-cutoff="380" data-gain="3" data-freq="90">
+              Heavy Traffic LFN
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Information Card -->
+    <div class="bg-slate-900/40 border border-slate-800/60 rounded-xl p-4 text-xs text-slate-400 leading-relaxed">
+      <strong class="text-slate-300 font-semibold block mb-1">Why Brown Noise for Pump Noise?</strong>
+      Heat pumps, AC compressors, and circulation pumps emit continuous, low-frequency acoustic energy (typically between 30 Hz and 120 Hz) that easily penetrates party walls and floors. Brown (Brownian) noise naturally exhibits a steep 6 dB/octave attenuation curve, providing dense low-frequency power without the fatiguing high-frequency hiss found in white or pink noise.
+    </div>
+  </main>
+
+  <footer class="max-w-4xl w-full mx-auto text-center text-xs text-slate-600 font-mono-code pt-4 border-t border-slate-800/60">
+    Pure Client-Side Web Audio API Synthesis &bull; No Network Latency
+  </footer>
+
+  <script>
+    // --- Web Audio Graph Variables ---
+    let audioCtx = null;
+    let brownNoiseNode = null;
+    let lowShelfFilter = null;
+    let lowPassFilter1 = null;
+    let lowPassFilter2 = null; // Cascaded for 24 dB/oct slope
+    let gainNode = null;
+    let analyserNode = null;
+    let isPlaying = false;
+    let animFrameId = null;
+
+    // DOM Elements
+    const toggleBtn = document.getElementById('toggle-play-btn');
+    const playLabel = document.getElementById('play-label');
+    const playIcon = document.getElementById('play-icon');
+    const stateBadge = document.getElementById('audio-state-badge');
+    
+    const volumeSlider = document.getElementById('volume-slider');
+    const volumeVal = document.getElementById('volume-val');
+    
+    const cutoffSlider = document.getElementById('cutoff-slider');
+    const cutoffVal = document.getElementById('cutoff-val');
+    
+    const shelfGainSlider = document.getElementById('shelf-gain-slider');
+    const shelfGainVal = document.getElementById('shelf-gain-val');
+    const shelfFreqLabel = document.getElementById('shelf-freq-label');
+    const resetBtn = document.getElementById('preset-reset-btn');
+
+    const canvas = document.getElementById('visualizer-canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Current filter frequency for Low Shelf (target pump fundamental)
+    let currentShelfFreq = 80;
+
+    /**
+     * Creates a continuous brown noise generator using the standard leaky integrator algorithm.
+     * Integrates white noise to produce true 1/f^2 spectral power density.
+     */
+    function createBrownNoiseGenerator(context) {
+      const bufferSize = 4096;
+      // ScriptProcessor is used here for zero-dependency single-file guarantee without CORS worklet loading issues
+      const node = context.createScriptProcessor(bufferSize, 1, 1);
+      let lastOut = 0.0;
+
+      node.onaudioprocess = function(e) {
+        const output = e.outputBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          const white = Math.random() * 2 - 1;
+          // Brownian leaky integrator formula
+          lastOut = (lastOut + (0.02 * white)) / 1.02;
+          // Scale up amplitude to compensate integration attenuation
+          output[i] = lastOut * 3.5;
+        }
+      };
+
+      return node;
+    }
+
+    /**
+     * Initializes the Web Audio Graph
+     */
+    function setupAudioGraph() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContextClass();
+      }
+
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+
+      // 1. Noise Source
+      brownNoiseNode = createBrownNoiseGenerator(audioCtx);
+
+      // 2. Sub-Bass Boost (Low Shelf at targeted pump zone)
+      lowShelfFilter = audioCtx.createBiquadFilter();
+      lowShelfFilter.type = 'lowshelf';
+      lowShelfFilter.frequency.setValueAtTime(currentShelfFreq, audioCtx.currentTime);
+      lowShelfFilter.gain.setValueAtTime(parseFloat(shelfGainSlider.value), audioCtx.currentTime);
+
+      // 3. Steep Low-Pass Filter (Two 12dB/oct stages in series = 24dB/oct)
+      const cutoffFreq = parseFloat(cutoffSlider.value);
+      lowPassFilter1 = audioCtx.createBiquadFilter();
+      lowPassFilter1.type = 'lowpass';
+      lowPassFilter1.frequency.setValueAtTime(cutoffFreq, audioCtx.currentTime);
+      lowPassFilter1.Q.setValueAtTime(0.707, audioCtx.currentTime); // Butterworth Q
+
+      lowPassFilter2 = audioCtx.createBiquadFilter();
+      lowPassFilter2.type = 'lowpass';
+      lowPassFilter2.frequency.setValueAtTime(cutoffFreq, audioCtx.currentTime);
+      lowPassFilter2.Q.setValueAtTime(0.707, audioCtx.currentTime);
+
+      // 4. Analyser Node for FFT Visualization
+      analyserNode = audioCtx.createAnalyser();
+      analyserNode.fftSize = 2048;
+      analyserNode.smoothingTimeConstant = 0.85;
+
+      // 5. Master Gain Node
+      gainNode = audioCtx.createGain();
+      const vol = parseFloat(volumeSlider.value) / 100;
+      // Smooth exponential gain curve
+      gainNode.gain.setValueAtTime(vol * vol, audioCtx.currentTime);
+
+      // Connect Signal Chain
+      brownNoiseNode.connect(lowShelfFilter);
+      lowShelfFilter.connect(lowPassFilter1);
+      lowPassFilter1.connect(lowPassFilter2);
+      lowPassFilter2.connect(analyserNode);
+      analyserNode.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+    }
+
+    function stopAudio() {
+      if (gainNode && audioCtx) {
+        // Soft ramp down to prevent click
+        gainNode.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + 0.08);
+        setTimeout(() => {
+          if (brownNoiseNode) {
+            brownNoiseNode.disconnect();
+            brownNoiseNode = null;
+          }
+          if (audioCtx && audioCtx.state !== 'closed') {
+            audioCtx.suspend();
+          }
+        }, 80);
+      }
+      isPlaying = false;
+      updateUIState();
+    }
+
+    function startAudio() {
+      setupAudioGraph();
+      isPlaying = true;
+      updateUIState();
+      drawVisualizer();
+    }
+
+    function togglePlay() {
+      if (!isPlaying) {
+        startAudio();
+      } else {
+        stopAudio();
+      }
+    }
+
+    function updateUIState() {
+      if (isPlaying) {
+        toggleBtn.classList.remove('bg-cyan-600', 'hover:bg-cyan-500', 'shadow-cyan-600/30');
+        toggleBtn.classList.add('bg-rose-600', 'hover:bg-rose-500', 'shadow-rose-600/30');
+        playLabel.textContent = 'STOP MASKING';
+        playIcon.innerHTML = '<path d="M6 6h12v12H6z"/>';
+        stateBadge.textContent = 'TRANSMITTING';
+        stateBadge.className = 'px-2.5 py-1 text-xs font-mono-code rounded-full bg-cyan-950/70 text-cyan-300 border border-cyan-800';
+      } else {
+        toggleBtn.classList.remove('bg-rose-600', 'hover:bg-rose-500', 'shadow-rose-600/30');
+        toggleBtn.classList.add('bg-cyan-600', 'hover:bg-cyan-500', 'shadow-cyan-600/30');
+        playLabel.textContent = 'START MASKING';
+        playIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+        stateBadge.textContent = 'STANDBY';
+        stateBadge.className = 'px-2.5 py-1 text-xs font-mono-code rounded-full bg-slate-900 text-slate-500 border border-slate-800';
+      }
+    }
+
+    // --- Control Event Handlers ---
+
+    // Volume
+    volumeSlider.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      volumeVal.textContent = `${val}%`;
+      if (gainNode && audioCtx) {
+        const norm = val / 100;
+        gainNode.gain.setTargetAtTime(norm * norm, audioCtx.currentTime, 0.03);
+      }
+    });
+
+    // Low Shelf Boost
+    shelfGainSlider.addEventListener('input', (e) => {
+      const gain = parseFloat(e.target.value);
+      shelfGainVal.textContent = `${gain >= 0 ? '+' : ''}${gain.toFixed(1)} dB`;
+      if (lowShelfFilter && audioCtx) {
+        lowShelfFilter.gain.setTargetAtTime(gain, audioCtx.currentTime, 0.05);
+      }
+    });
+
+    // Cutoff Frequency
+    cutoffSlider.addEventListener('input', (e) => {
+      const freq = parseFloat(e.target.value);
+      cutoffVal.textContent = `${Math.round(freq)} Hz`;
+      if (lowPassFilter1 && lowPassFilter2 && audioCtx) {
+        lowPassFilter1.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.05);
+        lowPassFilter2.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.05);
+      }
+    });
+
+    // Preset Buttons
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cutoff = parseFloat(btn.dataset.cutoff);
+        const gain = parseFloat(btn.dataset.gain);
+        const freq = parseFloat(btn.dataset.freq);
+
+        currentShelfFreq = freq;
+        shelfFreqLabel.textContent = `${freq} Hz`;
+
+        cutoffSlider.value = cutoff;
+        cutoffVal.textContent = `${cutoff} Hz`;
+
+        shelfGainSlider.value = gain;
+        shelfGainVal.textContent = `${gain >= 0 ? '+' : ''}${gain.toFixed(1)} dB`;
+
+        if (audioCtx) {
+          if (lowShelfFilter) {
+            lowShelfFilter.frequency.setTargetAtTime(currentShelfFreq, audioCtx.currentTime, 0.05);
+            lowShelfFilter.gain.setTargetAtTime(gain, audioCtx.currentTime, 0.05);
+          }
+          if (lowPassFilter1 && lowPassFilter2) {
+            lowPassFilter1.frequency.setTargetAtTime(cutoff, audioCtx.currentTime, 0.05);
+            lowPassFilter2.frequency.setTargetAtTime(cutoff, audioCtx.currentTime, 0.05);
+          }
+        }
+      });
+    });
+
+    // Reset Defaults
+    resetBtn.addEventListener('click', () => {
+      currentShelfFreq = 80;
+      shelfFreqLabel.textContent = '80 Hz';
+      cutoffSlider.value = 220;
+      cutoffVal.textContent = '220 Hz';
+      shelfGainSlider.value = 8;
+      shelfGainVal.textContent = '+8.0 dB';
+
+      if (audioCtx) {
+        if (lowShelfFilter) {
+          lowShelfFilter.frequency.setTargetAtTime(80, audioCtx.currentTime, 0.05);
+          lowShelfFilter.gain.setTargetAtTime(8, audioCtx.currentTime, 0.05);
+        }
+        if (lowPassFilter1 && lowPassFilter2) {
+          lowPassFilter1.frequency.setTargetAtTime(220, audioCtx.currentTime, 0.05);
+          lowPassFilter2.frequency.setTargetAtTime(220, audioCtx.currentTime, 0.05);
+        }
+      }
+    });
+
+    toggleBtn.addEventListener('click', togglePlay);
+
+    // --- High-Resolution Low-End FFT Visualizer ---
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function drawVisualizer() {
+      if (!isPlaying) {
+        // Draw resting flat line
+        const width = canvas.getBoundingClientRect().width;
+        const height = canvas.getBoundingClientRect().height;
+        ctx.clearRect(0, 0, width, height);
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, height - 10);
+        ctx.lineTo(width, height - 10);
+        ctx.stroke();
+        return;
+      }
+
+      animFrameId = requestAnimationFrame(drawVisualizer);
+
+      const width = canvas.getBoundingClientRect().width;
+      const height = canvas.getBoundingClientRect().height;
+      const bufferLength = analyserNode.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      analyserNode.getByteFrequencyData(dataArray);
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Grid background (subtle log lines for 50Hz, 100Hz, 250Hz, 500Hz)
+      const sampleRate = audioCtx.sampleRate;
+      const maxFreqView = 1000; // Focus spectrum on 20 Hz - 1000 Hz
+
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.35)';
+      const markers = [50, 100, 250, 500];
+      markers.forEach(freq => {
+        // Logarithmic horizontal position
+        const norm = (Math.log10(freq) - Math.log10(20)) / (Math.log10(maxFreqView) - Math.log10(20));
+        const x = norm * width;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      });
+
+      // Highlight target pump interference zone (40 Hz to 120 Hz)
+      const pumpStartNorm = (Math.log10(40) - Math.log10(20)) / (Math.log10(maxFreqView) - Math.log10(20));
+      const pumpEndNorm = (Math.log10(120) - Math.log10(20)) / (Math.log10(maxFreqView) - Math.log10(20));
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.07)';
+      ctx.fillRect(pumpStartNorm * width, 0, (pumpEndNorm - pumpStartNorm) * width, height);
+
+      // Render Smooth Spectral Curve
+      ctx.beginPath();
+      ctx.moveTo(0, height);
+
+      const pointsCount = 120;
+      for (let i = 0; i <= pointsCount; i++) {
+        const ratio = i / pointsCount;
+        // Log mapping from 20 Hz to 1000 Hz
+        const freq = 20 * Math.pow(maxFreqView / 20, ratio);
+        const binIndex = Math.round(freq / (sampleRate / 2) * bufferLength);
+        const value = dataArray[Math.min(binIndex, bufferLength - 1)] || 0;
+
+        const x = ratio * width;
+        const y = height - (value / 255) * (height - 15) - 8;
+
+        if (i === 0) {
+          ctx.lineTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+
+      ctx.lineTo(width, height);
+      ctx.closePath();
+
+      // Fill with smooth gradient
+      const gradient = ctx.createLinearGradient(0, 0, 0, height);
+      gradient.addColorStop(0, 'rgba(56, 189, 248, 0.45)');
+      gradient.addColorStop(0.5, 'rgba(14, 165, 233, 0.2)');
+      gradient.addColorStop(1, 'rgba(15, 23, 42, 0.05)');
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      // Spectral outline stroke
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#38bdf8';
+      ctx.stroke();
+    }
+
+    // Initial silent visualizer setup
+    drawVisualizer();
+  </script>
+</body>
+</html>
